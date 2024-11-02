@@ -13,7 +13,7 @@ class DataSet(tordata.Dataset):
                             a certain gait sequence presented as [label, type, view, paths];
         """
         self.__dataset_parser(data_cfg, training)
-        self.cache = data_cfg['cache']
+        self.cache = data_cfg.get('cache', None)
         self.label_list = [seq_info[0] for seq_info in self.seqs_info]
         self.types_list = [seq_info[1] for seq_info in self.seqs_info]
         self.views_list = [seq_info[2] for seq_info in self.seqs_info]
@@ -123,13 +123,13 @@ class DataSet(tordata.Dataset):
                             ## Only PKL
                             seq_dirs = [dir for dir in seq_dirs if dir.endswith('.pkl')]
                             ## Add Threshold for GaitGraph
-                            if data_config['frame_threshold'] != 0:
-                                frame_threshold = data_config['frame_threshold']
-                                with open(seq_dirs[0], 'rb') as f:
-                                    data_check = pickle.load(f)
-                                f.close()
-                                if len(data_check) < frame_threshold + 1:
-                                    continue
+                            # if data_config['frame_threshold'] != 0:
+                            #     frame_threshold = data_config['frame_threshold']
+                            #     with open(seq_dirs[0], 'rb') as f:
+                            #         data_check = pickle.load(f)
+                            #     f.close()
+                            #     if len(data_check) < frame_threshold + 1:
+                            #         continue
                             
                             seqs_info_list.append([*seq_info, seq_dirs])
                         else:

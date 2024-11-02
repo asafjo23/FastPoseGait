@@ -156,10 +156,8 @@ class BaseModel(MetaModel, nn.Module):
                 cfgs['data_cfg'], train=False)
         ##increase the ddp waitting time
         #dist.init_process_group(backend='nccl', init_method='env://', timeout=datetime.timedelta(seconds=5400))
-        self.device = torch.distributed.get_rank()
-        torch.cuda.set_device(self.device)
-        self.to(device=torch.device(
-            "cuda", self.device))
+        self.device = 0
+        self.to(device=torch.device("cuda", self.device))
 
         if training:
             self.loss_aggregator = LossAggregator(cfgs['loss_cfg'])
@@ -385,11 +383,11 @@ class BaseModel(MetaModel, nn.Module):
         info_dict = Odict()
         for inputs in self.test_loader:
             ipts = self.inputs_pretreament(inputs)
-            with autocast(enabled=self.engine_cfg['enable_float16']):
+            with torch.amp.autocast('cuda', enabled=self.engine_cfg['enable_float16']):
                 retval = self.forward(ipts)
                 inference_feat = retval['inference_feat']
-                for k, v in inference_feat.items():
-                    inference_feat[k] = ddp_all_gather(v, requires_grad=False)
+                # for k, v in inference_feat.items():
+                #     inference_feat[k] = ddp_all_gather(v, requires_grad=False)
                 del retval
             for k, v in inference_feat.items():
                 inference_feat[k] = ts2np(v)
@@ -411,7 +409,7 @@ class BaseModel(MetaModel, nn.Module):
         """Accept the instance object(model) here, and then run the train loop."""
         for inputs in model.train_loader:
             ipts = model.inputs_pretreament(inputs)
-            with autocast(enabled=model.engine_cfg['enable_float16']):
+            with torch.amp.autocast('cuda', enabled=model.engine_cfg['enable_float16']):
                 retval = model(ipts)
                 training_feat, visual_summary = retval['training_feat'], retval['visual_summary']
                 del retval
@@ -424,9 +422,10 @@ class BaseModel(MetaModel, nn.Module):
             visual_summary['scalar/learning_rate'] = model.optimizer.param_groups[0]['lr']
 
             model.msg_mgr.train_step(loss_info, visual_summary)
-            if model.iteration % model.engine_cfg['save_iter'] == 0:
+            # if model.iteration % model.engine_cfg['save_iter'] == 0:
+            if model.iteration % 100 == 0:
                 # save the checkpoint
-                model.save_ckpt(model.iteration)
+                # model.save_ckpt(model.iteration)
 
                 # run test if with_test = true
                 if model.engine_cfg['with_test']:
@@ -434,8 +433,8 @@ class BaseModel(MetaModel, nn.Module):
                     model.eval()
                     result_dict = BaseModel.run_test(model)
                     model.train()
-                    if model.cfgs['trainer_cfg']['fix_BN']:
-                        model.fix_BN()
+                    # if model.cfgs['trainer_cfg']['fix_BN']:
+                    #     model.fix_BN()
                     model.msg_mgr.write_to_tensorboard(result_dict)
                     model.msg_mgr.reset_time()
             if model.iteration >= model.engine_cfg['total_iter']:
@@ -445,7 +444,7 @@ class BaseModel(MetaModel, nn.Module):
     def run_test(model):
         """Accept the instance object(model) here, and then run the test loop."""
 
-        rank = torch.distributed.get_rank()
+        rank = 0
         with torch.no_grad():
             info_dict = model.inference(rank)
         if rank == 0:

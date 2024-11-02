@@ -6,7 +6,7 @@ class SupConLoss_Lp(BaseLoss):
         super(SupConLoss_Lp, self).__init__()
         self.distance = distances.LpDistance()
         self.train_loss = losses.SupConLoss(temperature=temperature, distance=self.distance)
-    @gather_and_scale_wrapper
+
     def forward(self, features, labels=None, mask=None):
         loss = self.train_loss(features,labels)
         self.info.update({

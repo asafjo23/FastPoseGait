@@ -171,8 +171,8 @@ def ddp_all_gather(features, dim=0, requires_grad=True):
         inputs: [n, ...]
     '''
 
-    world_size = torch.distributed.get_world_size()
-    rank = torch.distributed.get_rank()
+    world_size = 1
+    rank = 0
     feature_list = [torch.ones_like(features) for _ in range(world_size)]
     torch.distributed.all_gather(feature_list, features.contiguous())
 

@@ -10,7 +10,6 @@ class TripletLoss(BaseLoss):
         self.margin = margin
         self.is_hard_loss = is_hard_loss
 
-    @gather_and_scale_wrapper
     def forward(self, embeddings, labels):
         # embeddings: [n, c, p], label: [n]
         embeddings = embeddings.permute(
@@ -28,18 +27,31 @@ class TripletLoss(BaseLoss):
 
         return loss_return, self.info
 
-    def batch_hard_triplet_loss(self,ap_dist,an_dist,dist):
-        # largest d(a,p)
-        ap_dist = ap_dist.max(-2)[0].view(dist.size(0),dist.size(1)) # [p,n]
-        # smallest d(a,n)
-        an_dist = an_dist.min(-1)[0].view(dist.size(0),dist.size(1)) #[p,n]
-        # [d(a,p)- d(a,n) + margin]+
-        loss = F.relu((ap_dist-an_dist + self.margin)) #[p,n]
+    def batch_hard_triplet_loss(self, ap_dist, an_dist, dist):
+        # Largest d(a,p) per anchor
+        ap_dist_max = ap_dist.max(-1)[0]  # [p, n_r]
+        # Smallest d(a,n) per anchor
+        an_dist_min = an_dist.min(-1)[0]  # [p, n_r]
 
-        hard_loss, _ = self.AvgNonZeroReducer(loss) #[p]
+        # Create a validity mask to handle cases where there are no positives or negatives
+        valid_pos = (ap_dist_max != float('-inf'))
+        valid_neg = (an_dist_min != float('inf'))
+        valid = valid_pos & valid_neg  # [p, n_r]
+
+        # Compute the loss only for valid anchors
+        loss = F.relu(ap_dist_max - an_dist_min + self.margin)  # [p, n_r]
+        loss = loss * valid.float()  # Zero out invalid positions
+
+        # Average over valid entries
+        num_valid = valid.float().sum()
+        if num_valid > 0:
+            hard_loss = loss.sum() / num_valid
+        else:
+            hard_loss = torch.tensor(0.0, device=loss.device)
 
         self.info.update({
-            'hard_loss': hard_loss.detach().clone()})
+            'hard_loss': hard_loss.detach().clone()
+        })
         return hard_loss
 
     def batch_all_triplet_loss(self,ap_dist,an_dist,dist):
@@ -77,15 +89,26 @@ class TripletLoss(BaseLoss):
         dist = torch.sqrt(F.relu(dist))  # [p, n_x, n_y]
         return dist
 
-    def Convert2Triplets(self, row_labels, clo_label, dist):
+    def Convert2Triplets(self, row_labels, col_labels, dist):
         """
             row_labels: tensor with size [n_r]
-            clo_label : tensor with size [n_c]
+            col_labels: tensor with size [n_c]
+            dist: tensor with size [p, n_r, n_c]
         """
-        matches = (row_labels.unsqueeze(1) ==
-                   clo_label.unsqueeze(0)).bool()  # [n_r, n_c]
+        matches = (row_labels.unsqueeze(1) == col_labels.unsqueeze(0))  # [n_r, n_c]
         diffenc = torch.logical_not(matches)  # [n_r, n_c]
-        p, n, _ = dist.size()
-        ap_dist = dist[:, matches].view(p, n, -1, 1)
-        an_dist = dist[:, diffenc].view(p, n, 1, -1)
+        p, n_r, n_c = dist.size()
+
+        # Expand matches and diffenc to size [p, n_r, n_c]
+        matches = matches.unsqueeze(0).expand(p, -1, -1)  # [p, n_r, n_c]
+        diffenc = diffenc.unsqueeze(0).expand(p, -1, -1)  # [p, n_r, n_c]
+
+        # For ap_dist, set non-positive distances to -inf (so max will ignore them)
+        ap_dist = dist.clone()
+        ap_dist[~matches] = float('-inf')
+
+        # For an_dist, set non-negative distances to +inf (so min will ignore them)
+        an_dist = dist.clone()
+        an_dist[~diffenc] = float('inf')
+
         return ap_dist, an_dist
