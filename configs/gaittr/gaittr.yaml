@@ -1,7 +1,7 @@
 data_cfg:
   dataset_name: CASIA-B
-  dataset_root: your_path
-  dataset_partition: ./datasets/CASIA-B/CASIA-B.json
+  dataset_root: C:\Users\asafj\Desktop\Research\Kinesics\data\CASIA-B-POSE\CASIA-B_SimCC
+  dataset_partition: C:\Users\asafj\Desktop\Research\FastPoseGait\datasets\CASIA-B\CASIA-B.json
   test_dataset_name: CASIA-B
   num_workers: 1
   remove_no_gallery: false

@@ -67,7 +67,7 @@ if __name__ == '__main__':
             cfgs = yaml.safe_load(file)
         return cfgs
 
-    cfgs = config_loader("C:\\Users\\asafj\\Desktop\\Research\\FastPoseGait\\configs\\kinesics\\kinesics.yaml")
+    cfgs = config_loader("C:\\Users\\asafj\\Desktop\\Research\\FastPoseGait\\configs\\test\\test.yaml")
     training = True
     initialization(cfgs, training)
     run_model(cfgs, training)

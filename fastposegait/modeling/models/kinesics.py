@@ -310,11 +310,11 @@ class Kinesics(BaseModel):
 
         self.A = torch.from_numpy(self.graph.A.astype(np.float32))
 
-        self.conv1 = AAGCN(in_channels[0], 32, self.A, 17, 2, residual=False)
-        self.conv2 = AAGCN(32, 64, self.A, 17, 2)
-        self.conv3 = AAGCN(64, 128, self.A, 17, 2)
-        self.conv4 = AAGCN(128, 256, self.A, 17, 2)
-        self.conv5 = AAGCN(256, 512, self.A, 17, 4)
+        self.conv1 = AAGCN(in_channels[0], 16, self.A, 17, 2, residual=False)
+        self.conv2 = AAGCN(16, 32, self.A, 17, 2)
+        self.conv3 = AAGCN(32, 64, self.A, 17, 2)
+        self.conv4 = AAGCN(64, 128, self.A, 17, 2)
+        self.conv5 = AAGCN(128, 256, self.A, 17, 4)
 
 
     def forward(self, inputs):

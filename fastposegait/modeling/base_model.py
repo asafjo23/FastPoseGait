@@ -381,27 +381,32 @@ class BaseModel(MetaModel, nn.Module):
         batch_size = self.test_loader.batch_sampler.batch_size
         rest_size = total_size
         info_dict = Odict()
-        for inputs in self.test_loader:
-            ipts = self.inputs_pretreament(inputs)
-            with torch.amp.autocast('cuda', enabled=self.engine_cfg['enable_float16']):
-                retval = self.forward(ipts)
-                inference_feat = retval['inference_feat']
-                # for k, v in inference_feat.items():
-                #     inference_feat[k] = ddp_all_gather(v, requires_grad=False)
-                del retval
-            for k, v in inference_feat.items():
-                inference_feat[k] = ts2np(v)
-            info_dict.append(inference_feat)
-            rest_size -= batch_size
-            if rest_size >= 0:
-                update_size = batch_size
-            else:
-                update_size = total_size % batch_size
-            pbar.update(update_size)
-        pbar.close()
-        for k, v in info_dict.items():
-            v = np.concatenate(v)[:total_size]
-            info_dict[k] = v
+        while True:
+            for inputs in self.test_loader:
+                ipts = self.inputs_pretreament(inputs)
+                with torch.amp.autocast('cuda', enabled=self.engine_cfg['enable_float16']):
+                    retval = self.forward(ipts)
+                    inference_feat = retval['inference_feat']
+                    # for k, v in inference_feat.items():
+                    #     inference_feat[k] = ddp_all_gather(v, requires_grad=False)
+                    del retval
+                for k, v in inference_feat.items():
+                    inference_feat[k] = ts2np(v)
+                info_dict.append(inference_feat)
+                rest_size -= batch_size
+                if rest_size >= 0:
+                    update_size = batch_size
+                else:
+                    update_size = total_size % batch_size
+                pbar.update(update_size)
+            pbar.close()
+            for k, v in info_dict.items():
+                v = np.concatenate(v)[:total_size]
+                info_dict[k] = v
+
+            if len(info_dict["embeddings"]) == total_size:
+                break
+
         return info_dict
 
     @ staticmethod
@@ -422,8 +427,8 @@ class BaseModel(MetaModel, nn.Module):
             visual_summary['scalar/learning_rate'] = model.optimizer.param_groups[0]['lr']
 
             model.msg_mgr.train_step(loss_info, visual_summary)
-            # if model.iteration % model.engine_cfg['save_iter'] == 0:
-            if model.iteration % 100 == 0:
+            if model.iteration % model.engine_cfg['save_iter'] == 0:
+            # if model.iteration % 1 == 0:
                 # save the checkpoint
                 # model.save_ckpt(model.iteration)
 
