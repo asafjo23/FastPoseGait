@@ -17,7 +17,7 @@ evaluator_cfg:
     batch_size: 1 #should same to num_gpus
     sample_type: all_ordered
     type: InferenceSampler
-  metric: euc # cos
+  metric: cos # euc
   transform:
     - type: Compose
       trf_cfg:
@@ -26,16 +26,10 @@ evaluator_cfg:
         - type: SkeletonInput
 
 loss_cfg:
-  - loss_term_weight: 1.0
-    margin: 0.3
-    type: TripletLoss
-    log_prefix: triplet
-    is_hard_loss: true
-  - loss_term_weight: 1.0
-    scale: 16
-    type: CrossEntropyLoss
-    log_prefix: softmax
-    log_accuracy: true
+  type: TripletLoss
+  margin: 0.5
+  log_prefix: triplet
+  is_hard_loss: true
 
 model_cfg:
   model: Test
@@ -50,31 +44,31 @@ model_cfg:
 
 
 optimizer_cfg:
-  lr: 0.001
+  lr: 0.0001
   solver: Adam
-  weight_decay: 0.00002
 
 scheduler_cfg:
   three_phase: True
-  max_lr: 0.001
-  div_factor: 100
+  max_lr: 0.0005
+  div_factor: 25
   final_div_factor: 1000.0
   total_steps: 40000
-  pct_start: 0.475 # 学习率上升部分的比例
+  pct_start: 0.3
   scheduler: OneCycleLR
 
 trainer_cfg:
+  gradient_accumulation_steps: 4
   enable_float16: false #not use
   log_iter: 100
   with_test: true
   restore_ckpt_strict: false
   restore_hint: 0
-  save_iter: 1000
+  save_iter: 500
   save_name: Test
   sync_BN: true
   total_iter: 40000
   sampler:
-    batch_shuffle: false
+    batch_shuffle: true
     batch_size:
       - 4
       - 64
@@ -88,11 +82,11 @@ trainer_cfg:
     - type: Compose
       trf_cfg:
         - type: InversePosesPre
-          probability: 0.1
+          probability: 0.2
         - type: MirrorPoses
-          probability: 0.1
+          probability: 0.2
         - type: JointNoise
-          std: 0.3
+          std: 0.1
         - type: GaitTR_MultiInput
           joint_format: coco
         - type: SkeletonInput
