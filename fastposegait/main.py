@@ -32,7 +32,10 @@ def initialization(cfgs, training):
         msg_mgr.init_logger(output_path, False)
 
     msg_mgr.log_info(engine_cfg)
-    init_seeds(0)
+    random_data = os.urandom(4)
+    seed = int.from_bytes(random_data, byteorder="big")
+
+    init_seeds(seed)
 
 
 def run_model(cfgs, training):
@@ -67,7 +70,7 @@ if __name__ == '__main__':
             cfgs = yaml.safe_load(file)
         return cfgs
 
-    cfgs = config_loader("C:\\Users\\asafj\\Desktop\\Research\\FastPoseGait\\configs\\test\\test.yaml")
+    cfgs = config_loader("C:\\Users\\asafj\\Desktop\\Research\\FastPoseGait\\configs\\test\\test_CCPG.yaml")
     training = True
     initialization(cfgs, training)
     run_model(cfgs, training)

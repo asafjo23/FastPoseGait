@@ -209,7 +209,7 @@ def evaluate_Gait3D(data, conf, metric='euc'):
     features, labels, cams, time_seqs = data['embeddings'], data['labels'], data['types'], data['views']
     import json
     probe_sets = json.load(
-        open('./datasets/Gait3D/Gait3D.json', 'rb'))['PROBE_SET']
+        open('C:\\Users\\asafj\\Desktop\\Research\\FastPoseGait\\datasets\\Gait3D\\Gait3D.json', 'rb'))['PROBE_SET']
     probe_mask = []
     for id, ty, sq in zip(labels, cams, time_seqs):
         if '-'.join([id, ty, sq]) in probe_sets:

@@ -139,8 +139,10 @@ class Test(BaseModel):
         if len(pose.size()) == 5:  # [N, C, T, V, M]
             pose = pose.squeeze(-1)
 
+        del ipts
+        x = pose[:, :2, ...]
         # Input normalization
-        x = self.input_bn(pose)
+        x = self.input_bn(x)
 
         # Process with ST-GCN blocks
         x = self.st_blocks(x)
@@ -152,13 +154,13 @@ class Test(BaseModel):
         # Feature fusion
         x = torch.cat([global_feat] + local_feats, dim=1)
         embeddings = self.fusion(x)
+        embeddings = F.normalize(embeddings, p=2, dim=1)
 
         retval = {
             'training_feat': {
                 'triplet': {'embeddings': embeddings.unsqueeze(-1), 'labels': labs},
             },
             'visual_summary': {
-                'image/pose': pose.view(N * T, M, V, C)
             },
             'inference_feat': {
                 'embeddings': embeddings.unsqueeze(-1)

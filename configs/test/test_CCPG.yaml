@@ -2,28 +2,30 @@ data_cfg:
   dataset_name: CCPG
   dataset_root: C:\Users\asafj\Desktop\Research\Kinesics\data\CCPG-Pose\ccpg-keypoints
   dataset_partition: C:\Users\asafj\Desktop\Research\FastPoseGait\datasets\CCPG\CCPG.json
-  test_dataset_name: CCPG
-
-  num_workers: 0
+  num_workers: 1
   remove_no_gallery: false
+  frame_threshold: 0
+  test_dataset_name: CCPG
 
 evaluator_cfg:
   enable_float16: false
   restore_ckpt_strict: true
   restore_hint: 40000
-  save_name: gpgait
+  eval_func: evaluate_CCPG
+  save_name: GaitRecognitionModel
   sampler:
+    batch_shuffle: false
     batch_size: 1 # should be same as num_gpus
-    sample_type: all_ordered
+    sample_type: fixed_ordered
+    frames_num_fixed: 30
+    frames_skip_num: 4
     type: InferenceSampler
   metric: euc # cos
-  eval_func: evaluate_CCPG
   transform:
     - type: Compose
       trf_cfg:
-        - type: Affine
-        - type: RescaleCenter
-        - type: HOD_MultiInput
+        - type: GaitTRMultiInput
+          joint_format: coco
         - type: SkeletonInput
 
 loss_cfg:
@@ -40,29 +42,29 @@ loss_cfg:
     label_smooth: false
 
 model_cfg:
-  model: gpgait
+  model: GaitRecognitionModel
   in_channels:
-    - 2 
+    - 10
     - 64
     - 64
     - 128
     - 256
+  joint_format: coco
   num_class: 100
   share_num: 3
 
-
 optimizer_cfg:
   lr: 0.001
-  momentum: 0.9
   solver: Adam
   weight_decay: 0.00002
 
 scheduler_cfg:
   three_phase: True
-  max_lr: 0.002
+  max_lr: 0.001
   div_factor: 100
+  final_div_factor: 1000.0
   total_steps: 40000
-  pct_start: 0.5 
+  pct_start: 0.475
   scheduler: OneCycleLR
 
 trainer_cfg:
@@ -71,28 +73,31 @@ trainer_cfg:
   with_test: true
   restore_ckpt_strict: false
   restore_hint: 0
-  save_iter: 10000
-  save_name: gpgait
+  save_iter: 500
+  save_name: GaitRecognitionModel
   sync_BN: true
   total_iter: 40000
   sampler:
     batch_shuffle: false
     batch_size:
-      - 4
       - 32
+      - 4
     frames_num_fixed: 60
     frames_num_max: 50
     frames_num_min: 25
-    sample_type: fixed_unordered #Repeat sample
+    sample_type: fixed_ordered #Repeat sample
     frames_skip_num: 0
     type: TripletSampler
   transform:
     - type: Compose
       trf_cfg:
-        - type: Affine
-        - type: RescaleCenter
-          center: 'neck'
-          scale: 225
-        - type: HOD_MultiInput
+        - type: PointNoise
+          std: 0.3
+        - type: InversePosesPre
+          joint_format: coco
+          probability: 0.1
+        - type: JointNoise
+          std: 0.3
+        - type: GaitTRMultiInput
           joint_format: coco
         - type: SkeletonInput

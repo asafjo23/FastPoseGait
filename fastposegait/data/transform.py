@@ -441,3 +441,40 @@ def Compose(trf_cfg):
     assert is_list(trf_cfg)
     transform = T.Compose([get_transform(cfg) for cfg in trf_cfg])
     return transform
+
+
+class GaitTRMultiInput(object):
+    def __init__(self, joint_format='coco', ):
+        if joint_format == 'coco':
+            self.connect_joint = np.array([5, 0, 0, 1, 2, 0, 0, 5, 6, 7, 8, 5, 6, 11, 12, 13, 14])
+        elif joint_format in ['alphapose', 'openpose']:
+            self.connect_joint = np.array([1, 1, 1, 2, 3, 1, 5, 6, 2, 8, 9, 5, 11, 12, 0, 0, 14, 15])
+        else:
+            raise ValueError("Invalid joint_format.")
+
+    def __call__(self, data):
+        # (C, T, V) -> (I, C * 2, T, V)
+        data = np.transpose(data, (2, 0, 1))
+
+        data = data[:2, :, :]
+
+        C, T, V = data.shape
+        data_new = np.zeros((5, C, T, V))
+        # Joints
+        data_new[0, :C, :, :] = data
+        for i in range(V):
+            data_new[1, :, :, i] = data[:, :, i] - data[:, :, 0]
+        # Velocity
+        for i in range(T - 2):
+            data_new[2, :, i, :] = data[:, i + 1, :] - data[:, i, :]
+            data_new[3, :, i, :] = data[:, i + 2, :] - data[:, i, :]
+        # Bones
+        for i in range(len(self.connect_joint)):
+            data_new[4, :, :, i] = data[:, :, i] - data[:, :, self.connect_joint[i]]
+
+        I, C, T, V = data_new.shape
+        data_new = data_new.reshape(I * C, T, V)
+        # (C T V) -> (T V C)
+        data_new = np.transpose(data_new, (1, 2, 0))
+
+        return data_new

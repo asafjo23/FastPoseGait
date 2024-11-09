@@ -1,6 +1,6 @@
 data_cfg:
   dataset_name: CASIA-B
-  dataset_root: C:\Users\asafj\Desktop\Research\Kinesics\data\CASIA-B-POSE\CASIA-B_SimCC
+  dataset_root: C:\Users\asafj\Desktop\Research\Kinesics\data\CASIA-B-POSE\CASIA-B_HRNet
   dataset_partition: C:\Users\asafj\Desktop\Research\FastPoseGait\datasets\CASIA-B\CASIA-B.json
   test_dataset_name: CASIA-B
   num_workers: 1
@@ -11,7 +11,7 @@ data_cfg:
 evaluator_cfg:
   enable_float16: false
   restore_ckpt_strict: true
-  restore_hint: 40000
+  restore_hint: C:\Users\asafj\Desktop\Research\FastPoseGait\pretrained\FastPoseGait-Vanilla\GaitTR\GaitTR-casiab-91.pt
   save_name: GaitTR
   eval_func: evaluate_indoor_dataset
   sampler:
