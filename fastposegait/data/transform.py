@@ -90,6 +90,61 @@ class PointNoise(object):
         return data + noise
 
 
+class RandomRotation(object):
+    """
+    Random rotation of skeleton around center point
+    """
+    def __init__(self, degrees=(-10, 10)):
+        self.degrees = degrees
+
+    def __call__(self, data):
+        angle = np.random.uniform(self.degrees[0], self.degrees[1])
+        theta = np.radians(angle)
+        
+        # Center point (using neck as center)
+        center_x = np.mean(data[:, 5:7, 0], axis=1)  # Mean of left/right neck
+        center_y = np.mean(data[:, 5:7, 1], axis=1)  # Mean of left/right neck
+        
+        # Rotation matrix
+        c, s = np.cos(theta), np.sin(theta)
+        R = np.array([[c, -s], [s, c]])
+        
+        # Reshape centers for broadcasting
+        center_x = center_x[:, np.newaxis, np.newaxis]  # [T, 1, 1]
+        center_y = center_y[:, np.newaxis, np.newaxis]  # [T, 1, 1]
+        centers = np.concatenate([center_x, center_y], axis=2)  # [T, 1, 2]
+        
+        # Center the points, rotate, then move back
+        centered = data[:, :, :2] - centers  # [T, V, 2]
+        
+        # Apply rotation
+        rotated = np.einsum('ij,tvj->tvi', R, centered)
+        
+        # Move back
+        data[:, :, :2] = rotated + centers
+        
+        return data
+
+
+class RandomPerspective(object):
+    """
+    Apply random perspective transformation
+    """
+    def __init__(self, distortion_scale=0.2):
+        self.distortion_scale = distortion_scale
+
+    def __call__(self, data):
+        # Random perspective matrix
+        height_scale = 1 + np.random.uniform(-self.distortion_scale, self.distortion_scale)
+        width_scale = 1 + np.random.uniform(-self.distortion_scale, self.distortion_scale)
+        
+        # Apply perspective transformation (keeping z-coordinate unchanged)
+        data[:, :, 0] *= width_scale   # x coordinates
+        data[:, :, 1] *= height_scale  # y coordinates
+        
+        return data
+
+
 class FlipSequence(object):
     """
     Temporal Fliping

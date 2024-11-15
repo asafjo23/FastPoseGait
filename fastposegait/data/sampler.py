@@ -158,7 +158,7 @@ class RandomTripletSampler(tordata.sampler.Sampler):
             idx = torch.tensor(idx)
             if torch.cuda.is_available():
                 idx = idx.cuda()
-            torch.distributed.broadcast(idx, src=0)
+            # torch.distributed.broadcast(idx, src=0)
             # select one by idx
             batch_size =self.comb_list[idx]
             

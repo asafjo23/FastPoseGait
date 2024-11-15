@@ -1,46 +1,11 @@
-from torch.nn.functional import embedding
-
 from ..base_model import BaseModel
 
-import math
-import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
 import torch
-from torch.autograd import Variable
-
-from ..graph import Graph
 
 
-class SpatialAttention(nn.Module):
-    def __init__(self, channels):
-        super().__init__()
-        self.conv = nn.Conv2d(channels, 1, kernel_size=1)
-        self.sigmoid = nn.Sigmoid()
-
-    def forward(self, x):
-        attention = self.sigmoid(self.conv(x))
-        return x * attention
-
-
-class TemporalAttention(nn.Module):
-    def __init__(self, channels):
-        super().__init__()
-        self.avg_pool = nn.AdaptiveAvgPool2d((None, 1))
-        self.fc = nn.Sequential(
-            nn.Linear(channels, channels // 8),
-            nn.ReLU(),
-            nn.Linear(channels // 8, channels),
-            nn.Sigmoid()
-        )
-
-    def forward(self, x):
-        # x shape: [B, C, T, V]
-        b, c, t, v = x.size()
-        y = self.avg_pool(x).view(b, c, t)
-        y = self.fc(y.transpose(1, 2)).transpose(1, 2)
-        y = y.view(b, c, t, 1)
-        return x * y
+from ..components import SeparateBNNecks, SeparateFCs
 
 
 class JointsModule(nn.Module):
@@ -48,50 +13,101 @@ class JointsModule(nn.Module):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
-        
-        # FC layer to process all joints together
         self.fc = nn.Linear(in_channels, out_channels)
         self.bn = nn.BatchNorm2d(out_channels)
         self.relu = nn.ReLU()
 
     def forward(self, x):
-        # x shape: [B, C, T, V]
         B, C, T, V = x.size()
-        
-        # Reshape to process joints with FC: [B*T, V, C]
         x = x.permute(0, 2, 3, 1).reshape(-1, V, C)
-        
-        # Apply FC: [B*T, V, C_out]
         x = self.fc(x)
-        
-        # Reshape back: [B, C_out, T, V]
         x = x.reshape(B, T, V, self.out_channels).permute(0, 3, 1, 2)
-        
         x = self.bn(x)
         x = self.relu(x)
         return x
 
 
-class GaitBlock(nn.Module):
-    def __init__(self, in_channels, out_channels):
+class TemporalFeatureExtractor(nn.Module):
+    def __init__(self, channels):
         super().__init__()
-        # Replace spatial conv with FC-based module
-        self.spatial_module = JointsModule(in_channels, out_channels)
-        self.temporal_conv = nn.Conv2d(out_channels, out_channels, kernel_size=(3, 1), padding=(1, 0))
-        self.bn = nn.BatchNorm2d(out_channels)
+        self.channels = channels
+        # First reshape and mix all joints' features
+        self.joint_mixer = nn.Conv2d(channels, channels, kernel_size=(1, 17))
+        # Temporal convolution considering mixed joint features
+        self.temporal_conv = nn.Conv2d(
+            channels, channels, kernel_size=(3, 1), padding=(1, 0)
+        )
+        self.bn = nn.BatchNorm2d(channels)
         self.relu = nn.ReLU()
-        self.spatial_attention = SpatialAttention(out_channels)
-        self.temporal_attention = TemporalAttention(out_channels)
 
     def forward(self, x):
-        # Spatial relations
-        x = self.spatial_module(x)
-        x = self.spatial_attention(x)
-
-        # Temporal convolution
+        # x shape: [B, C, T, V] where V is number of joints (17)
+        # Mix information from all joints
+        x_mixed = self.joint_mixer(x)  # Result: [B, C, T, 1]
+        # Expand back to all joints
+        x_mixed = x_mixed.expand(-1, -1, -1, 17)  # [B, C, T, V]
+        # Add the mixed information to original features
+        x = x + x_mixed
+        # Apply temporal convolution
         x = self.temporal_conv(x)
-        x = self.temporal_attention(x)
+        x = self.bn(x)
+        x = self.relu(x)
+        return x
 
+
+class ViewAwareAttention(nn.Module):
+    def __init__(self, channels, num_heads=8, dropout=0.1):
+        super().__init__()
+        self.channels = channels
+        self.num_heads = num_heads
+        self.mha = nn.MultiheadAttention(
+            embed_dim=channels,
+            num_heads=num_heads,
+            dropout=dropout,
+            batch_first=True
+        )
+        self.view_embed = nn.Parameter(torch.randn(1, 1, channels))
+        self.norm1 = nn.LayerNorm(channels)
+        self.norm2 = nn.LayerNorm(channels)
+        self.ffn = nn.Sequential(
+            nn.Linear(channels, channels * 4),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(channels * 4, channels)
+        )
+
+    def forward(self, x):
+        B, C, T, V = x.size()
+        x_reshaped = x.permute(0, 2, 3, 1).reshape(B, T*V, C)
+        x_with_view = x_reshaped + self.view_embed
+        attn_out, _ = self.mha(
+            query=x_with_view,
+            key=x_with_view,
+            value=x_with_view
+        )
+        x1 = self.norm1(x_reshaped + attn_out)
+        ffn_out = self.ffn(x1)
+        out = self.norm2(x1 + ffn_out)
+        out = out.reshape(B, T, V, C).permute(0, 3, 1, 2)
+        
+        return out
+
+
+class GaitBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, dropout_rate=0.1):
+        super().__init__()
+        self.spatial_module = JointsModule(in_channels, out_channels)
+        self.temporal_module = TemporalFeatureExtractor(out_channels)
+        self.view_attention = ViewAwareAttention(out_channels)
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout2d(p=dropout_rate)
+
+    def forward(self, x):
+        x = self.spatial_module(x)
+        x = self.dropout(x)
+        x = self.temporal_module(x)
+        x = self.view_attention(x)
         x = self.bn(x)
         x = self.relu(x)
         return x
@@ -99,37 +115,39 @@ class GaitBlock(nn.Module):
 
 class Test(BaseModel):
     def build_network(self, model_cfg):
+        dropout_rate = 0.1
         in_channels = model_cfg["in_channels"]
-        self.num_class = model_cfg['num_class']
+        self.num_class = model_cfg["num_class"]
         self.hidden_dim = 64
         self.out_dim = 256
-
-        # Input normalization
         self.input_bn = nn.BatchNorm2d(in_channels[0])
-
-        # Spatial-Temporal Graph Convolution blocks
         self.st_blocks = nn.Sequential(
             GaitBlock(in_channels[0], self.hidden_dim),
-            nn.MaxPool2d(kernel_size=(2, 1)),
+            nn.Dropout2d(p=dropout_rate),
+            nn.MaxPool2d(kernel_size=(2, 1), padding=(1, 0)),
             GaitBlock(self.hidden_dim, self.hidden_dim * 2),
-            nn.MaxPool2d(kernel_size=(2, 1)),
-            GaitBlock(self.hidden_dim * 2, self.hidden_dim * 4)
+            nn.Dropout2d(p=dropout_rate),
+            nn.MaxPool2d(kernel_size=(2, 1), padding=(1, 0)),
+            GaitBlock(self.hidden_dim * 2, self.hidden_dim * 4),
+            nn.Dropout2d(p=dropout_rate),
+        )
+        self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.local_pools = nn.ModuleList(
+            [nn.AdaptiveAvgPool2d((2, 1)), nn.AdaptiveAvgPool2d((4, 1))]
         )
 
-        # Multi-scale feature extraction
-        self.global_pool = nn.AdaptiveAvgPool2d((1, 1))
-        self.local_pools = nn.ModuleList([
-            nn.AdaptiveAvgPool2d((2, 1)),
-            nn.AdaptiveAvgPool2d((4, 1))
-        ])
-
-        # Feature fusion
         self.fusion = nn.Sequential(
             nn.Linear(self.hidden_dim * 4 * 7, self.hidden_dim * 4),
             nn.BatchNorm1d(self.hidden_dim * 4),
             nn.ReLU(),
+            nn.Dropout(p=dropout_rate),
             nn.Linear(self.hidden_dim * 4, self.out_dim),
-            nn.BatchNorm1d(self.out_dim)
+            nn.BatchNorm1d(self.out_dim),
+        )
+
+        self.head = SeparateFCs(parts_num=17, in_channels=256, out_channels=256)
+        self.BNNecks = SeparateBNNecks(
+            class_num=self.num_class, in_channels=self.out_dim, parts_num=17
         )
 
     def forward(self, inputs):
@@ -140,30 +158,24 @@ class Test(BaseModel):
             pose = pose.squeeze(-1)
 
         del ipts
-        x = pose[:, :2, ...]
-        # Input normalization
+        x = pose
         x = self.input_bn(x)
-
-        # Process with ST-GCN blocks
         x = self.st_blocks(x)
 
-        # Multi-scale feature extraction
         global_feat = self.global_pool(x).contiguous().reshape(N, -1)
         local_feats = [pool(x).contiguous().reshape(N, -1) for pool in self.local_pools]
-
-        # Feature fusion
         x = torch.cat([global_feat] + local_feats, dim=1)
         embeddings = self.fusion(x)
-        embeddings = F.normalize(embeddings, p=2, dim=1)
+        embeddings = self.head(embeddings.unsqueeze(-1))
+        embed_2, logits = self.BNNecks(embeddings)
 
         retval = {
-            'training_feat': {
-                'triplet': {'embeddings': embeddings.unsqueeze(-1), 'labels': labs},
+            "training_feat": {
+                "tuplet": {"embeddings": embeddings, "labels": labs},
+                "snr": {"embeddings": embeddings, "labels": labs},
+                "softmax": {"logits": logits, "labels": labs}
             },
-            'visual_summary': {
-            },
-            'inference_feat': {
-                'embeddings': embeddings.unsqueeze(-1)
-            }
+            "visual_summary": {},
+            "inference_feat": {"embeddings": embed_2},
         }
         return retval

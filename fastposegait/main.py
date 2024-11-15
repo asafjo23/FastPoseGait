@@ -35,7 +35,7 @@ def initialization(cfgs, training):
     random_data = os.urandom(4)
     seed = int.from_bytes(random_data, byteorder="big")
 
-    init_seeds(seed)
+    init_seeds(seed, cuda_deterministic=False)
 
 
 def run_model(cfgs, training):
@@ -70,7 +70,7 @@ if __name__ == '__main__':
             cfgs = yaml.safe_load(file)
         return cfgs
 
-    cfgs = config_loader("C:\\Users\\asafj\\Desktop\\Research\\FastPoseGait\\configs\\test\\test_CCPG.yaml")
+    cfgs = config_loader("/home/ajoseph/FastPoseGait/configs/test/test_CCPG.yaml")
     training = True
     initialization(cfgs, training)
     run_model(cfgs, training)
